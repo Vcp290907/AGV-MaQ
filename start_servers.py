@@ -3,24 +3,33 @@ import os
 import sys
 import time
 import traceback
+import platform
+import threading
 
 def start_flask():
     print("Verificando backend...")
-    base_dir = "/home/vcp2909/Desktop/AGV-MaQ/AGV-MaQ"
+    base_dir = os.path.dirname(os.path.abspath(__file__))
     backend_dir = os.path.join(base_dir, "backend")
-    venv_python = os.path.join(backend_dir, "venv", "bin", "python")
-    server_path = os.path.join(backend_dir, "server.py")
+    if platform.system() == "Windows":
+        venv_python = os.path.join(backend_dir, "venv", "Scripts", "python.exe")
+    else:
+        venv_python = os.path.join(backend_dir, "venv", "bin", "python")
+    server_path = os.path.join(backend_dir, "api.py")
 
     if not os.path.exists(backend_dir):
         print(f"Erro: Diretório backend não encontrado em {backend_dir}")
         sys.exit(1)
-    if not os.path.exists(venv_python):
+    if not os.path.exists(server_path):
+        print(f"Erro: {os.path.basename(server_path)} não encontrado em {server_path}")
+        sys.exit(1)
+    # Só exige venv no Linux
+    if platform.system() != "Windows" and not os.path.exists(venv_python):
         print(f"Erro: Python do ambiente virtual não encontrado em {venv_python}")
         print("Crie o ambiente virtual com: cd backend && python3 -m venv venv && source venv/bin/activate && pip install flask flask-cors pyserial")
         sys.exit(1)
-    if not os.path.exists(server_path):
-        print(f"Erro: server.py não encontrado em {server_path}")
-        sys.exit(1)
+    # No Windows, usa o Python global se o venv não existir
+    if platform.system() == "Windows" and not os.path.exists(venv_python):
+        venv_python = sys.executable
 
     print(f"Iniciando Flask com {venv_python} {server_path}")
     try:
@@ -39,23 +48,19 @@ def start_flask():
 
 def start_react():
     print("Verificando frontend...")
-    base_dir = "/home/vcp2909/Desktop/AGV-MaQ/AGV-MaQ"
+    base_dir = os.path.dirname(os.path.abspath(__file__))
     frontend_dir = os.path.join(base_dir, "frontend")
-    build_dir = os.path.join(frontend_dir, "build")
 
     if not os.path.exists(frontend_dir):
         print(f"Erro: Diretório frontend não encontrado em {frontend_dir}")
         sys.exit(1)
-    if not os.path.exists(build_dir):
-        print(f"Erro: Diretório build não encontrado em {build_dir}")
-        print("Execute 'cd frontend && npm run build' primeiro")
-        sys.exit(1)
 
-    print(f"Iniciando React (estático) em {build_dir}")
+    print(f"Iniciando React (desenvolvimento) em {frontend_dir}")
+    npm_cmd = "npm.cmd" if platform.system() == "Windows" else "npm"
     try:
         process = subprocess.Popen(
-            ["python3", "-m", "http.server", "8000"],
-            cwd=build_dir,
+            [npm_cmd, "start"],
+            cwd=frontend_dir,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True
@@ -83,12 +88,16 @@ def main():
     print(f"Diretório atual: {os.getcwd()}")
     print("Iniciando servidores...")
 
+    flask_process = None
+    react_process = None
+
     try:
         flask_process = start_flask()
+        print("API Flask disponível em: http://localhost:5000")
         time.sleep(2)
         react_process = start_react()
+        print("Site (React) disponível em: http://localhost:3000")
 
-        import threading
         flask_thread = threading.Thread(target=log_output, args=(flask_process, "Flask"))
         react_thread = threading.Thread(target=log_output, args=(react_process, "React"))
         flask_thread.start()
@@ -104,10 +113,12 @@ def main():
             time.sleep(1)
     except KeyboardInterrupt:
         print("\nEncerrando servidores...")
-        flask_process.terminate()
-        react_process.terminate()
-        flask_process.wait()
-        react_process.wait()
+        if flask_process:
+            flask_process.terminate()
+            flask_process.wait()
+        if react_process:
+            react_process.terminate()
+            react_process.wait()
         print("Servidores encerrados.")
     except Exception as e:
         print(f"Erro geral: {str(e)}")
